@@ -353,8 +353,9 @@ Call CALLBACK with the parsed JSON response."
 
 (defun smudge-api-get-playlist-tracks (json)
   "Return the list of tracks from the given playlist JSON object."
+  ;; Feb-2026: each playlist-items entry's track field was renamed `track' -> `item'.
   (mapcar (lambda (item)
-            (gethash "track" item))
+            (gethash "item" item))
           (smudge-api-get-items json)))
 
 (defun smudge-api-get-track-album (json)
@@ -411,7 +412,10 @@ Call CALLBACK with the parsed JSON response."
 
 (defun smudge-api-get-playlist-track-count (json)
   "Return the number of tracks of the given playlist JSON object."
-  (gethash "total" (gethash "tracks" json)))
+  ;; Feb-2026: playlist `tracks' object renamed -> `items'.  Non-owned playlists
+  ;; now return metadata only (no items object), so guard against nil.
+  (let ((items (gethash "items" json)))
+    (if (hash-table-p items) (or (gethash "total" items) 0) 0)))
 
 (defun smudge-api-get-playlist-owner-id (json)
   "Return the owner id of the given playlist JSON object."
@@ -420,37 +424,45 @@ Call CALLBACK with the parsed JSON response."
 (defun smudge-api-search (type query page callback)
   "Search artists, albums, tracks or playlists.
 Call CALLBACK with PAGE of items that match QUERY, depending on TYPE."
-  (let ((offset (* smudge-api-search-limit (1- page))))
+  ;; Feb-2026: the /search `limit' maximum dropped from 50 to 10.  Cap it here;
+  ;; `smudge-api-search-limit' stays larger for playlist/track pagination (which
+  ;; still allows up to 50 per page).
+  (let* ((limit (min smudge-api-search-limit 10))
+         (offset (* limit (1- page))))
     (smudge-api-call-async
      "GET"
      (concat "/search?"
              (url-build-query-string `((q      ,query)
                                        (type   ,type)
-                                       (limit  ,smudge-api-search-limit)
+                                       (limit  ,limit)
                                        (offset ,offset)
                                        (market from_token))
                                      nil t))
      nil
      callback)))
 
-(defun smudge-api-user-playlists (user-id page callback)
-  "Call CALLBACK with the PAGE of playlists for the given USER-ID."
+(defun smudge-api-user-playlists (_user-id page callback)
+  "Call CALLBACK with the PAGE of playlists for the current user.
+USER-ID is ignored: Feb-2026 removed GET /users/{id}/playlists, so we use
+GET /me/playlists (the current user's playlists) instead."
   (let ((offset (* smudge-api-search-limit (1- page))))
     (smudge-api-call-async
      "GET"
-     (concat (format "/users/%s/playlists?" (url-hexify-string user-id))
+     (concat "/me/playlists?"
              (url-build-query-string `((limit  ,smudge-api-search-limit)
                                        (offset ,offset))
                                      nil t))
      nil
      callback)))
 
-(defun smudge-api-playlist-create (user-id name public callback)
-  "Create a new playlist with NAME for the given USER-ID.
-Make PUBLIC if true.  Call CALLBACK with results"
+(defun smudge-api-playlist-create (_user-id name public callback)
+  "Create a new playlist with NAME for the current user.
+Make PUBLIC if true.  Call CALLBACK with results.
+USER-ID is ignored: Feb-2026 removed POST /users/{id}/playlists, so we use
+POST /me/playlists (creates under the current user) instead."
   (smudge-api-call-async
    "POST"
-   (format "/users/%s/playlists" (url-hexify-string user-id))
+   "/me/playlists"
    (format "{\"name\":\"%s\",\"public\":\"%s\"}" name (if public "true" "false"))
    callback))
 
@@ -465,14 +477,15 @@ Added by USER-ID.  Call CALLBACK with results."
       (format "\"%s\"" id)
     (format "\"spotify:%s:%s\"" type id)))
 
-(defun smudge-api-playlist-add-tracks (user-id playlist-id track-ids callback)
-  "Add TRACK-IDs to PLAYLIST-ID for USER-ID.
-Call CALLBACK with results."
+(defun smudge-api-playlist-add-tracks (_user-id playlist-id track-ids callback)
+  "Add TRACK-IDs to PLAYLIST-ID.
+Call CALLBACK with results.  USER-ID is ignored: Feb-2026 renamed
+POST /users/{id}/playlists/{id}/tracks -> POST /playlists/{id}/items
+\(the body is unchanged: a JSON array of Spotify URIs)."
   (let ((tracks (format "%s" (mapconcat (lambda (x) (smudge-api-format-id "track" x)) track-ids ","))))
     (smudge-api-call-async
      "POST"
-     (format "/users/%s/playlists/%s/tracks"
-             (url-hexify-string user-id) (url-hexify-string playlist-id))
+     (format "/playlists/%s/items" (url-hexify-string playlist-id))
      (format "{\"uris\": [ %s ]}" tracks)
      callback)))
 
@@ -482,14 +495,16 @@ Removed by USER-ID. Call CALLBACK with results."
   (smudge-api-playlist-remove-tracks playlist-id (list track-id) callback))
 
 (defun smudge-api-playlist-remove-tracks (playlist-id track-ids callback)
-  "Remove TRACK-IDS from PLAYLIST-ID for USER-ID.
-Call CALLBACK with results."
+  "Remove TRACK-IDS from PLAYLIST-ID.
+Call CALLBACK with results.  Feb-2026 renamed the path
+DELETE /playlists/{id}/tracks -> DELETE /playlists/{id}/items; the request body
+still uses the `tracks' array of {\"uri\": ...} objects."
   (let ((tracks (format "%s" (mapconcat
                               (lambda (x) (format "{\"uri\": %s}" (smudge-api-format-id "track" x)))
                               track-ids ","))))
     (smudge-api-call-async
      "DELETE"
-     (format "/playlists/%s/tracks" (url-hexify-string playlist-id))
+     (format "/playlists/%s/items" (url-hexify-string playlist-id))
      (format "{\"tracks\": [ %s ]}" tracks)
      callback)))
 
@@ -521,14 +536,13 @@ Call CALLBACK with results."
 
 (defun smudge-api-playlist-tracks (playlist page callback)
   "Call CALLBACK with PAGE of results of tracks from PLAYLIST."
-  (let ((owner (smudge-api-get-playlist-owner-id playlist))
-        (id (smudge-api-get-item-id playlist))
+  ;; Feb-2026: GET /users/{owner}/playlists/{id}/tracks was renamed to
+  ;; GET /playlists/{id}/items (the owner path segment is gone).
+  (let ((id (smudge-api-get-item-id playlist))
         (offset (* smudge-api-search-limit (1- page))))
     (smudge-api-call-async
      "GET"
-     (concat (format "/users/%s/playlists/%s/tracks?"
-                     (url-hexify-string owner)
-                     (url-hexify-string id))
+     (concat (format "/playlists/%s/items?" (url-hexify-string id))
              (url-build-query-string `((limit  ,smudge-api-search-limit)
                                        (offset ,offset)
                                        (market from_token))
@@ -553,8 +567,10 @@ Call CALLBACK with results."
 
 (defun smudge-api-popularity-bar (popularity)
   "Return the popularity indicator bar proportional to POPULARITY.
-Parameter must be a number between 0 and 100."
-  (let ((num-bars (truncate (/ popularity 10))))
+Parameter should be a number between 0 and 100.
+Feb-2026 removed Track `popularity', so POPULARITY may be nil; render an empty
+bar in that case rather than erroring."
+  (let ((num-bars (if (numberp popularity) (truncate (/ popularity 10)) 0)))
     (concat (make-string num-bars ?X)
             (make-string (- 10 num-bars) ?-))))
 
@@ -698,23 +714,35 @@ Call CALLBACK if provided."
 
 Up to 50 tracks can be specified per API call.
 
-Calls CALLBACK function with the API response."
+Calls CALLBACK function with the API response.
+
+Feb-2026 consolidated the per-type PUT /me/{tracks,albums,...} endpoints into
+PUT /me/library, which takes full Spotify URIs (not bare IDs).
+NOTE: this /me/library request schema has not yet been verified against the live
+API; if liking a track fails, this is the first place to check."
   (smudge-api-call-async
    "PUT"
-   (concat "/me/tracks?ids=" (string-join track-ids ","))
-   nil
+   "/me/library"
+   (format "{\"uris\": [ %s ]}"
+           (mapconcat (lambda (id) (smudge-api-format-id "track" id)) track-ids ","))
    callback))
 
 (defun smudge-api-remove-tracks-from-my-library (track-ids &optional callback)
-  "Save one or more TRACK-IDS to the user's \"Liked Songs\" library.
+  "Remove one or more TRACK-IDS from the user's \"Liked Songs\" library.
 
 Up to 50 tracks can be specified per API call.
 
-Calls CALLBACK function with the API response."
+Calls CALLBACK function with the API response.
+
+Feb-2026 consolidated the per-type DELETE /me/{tracks,albums,...} endpoints into
+DELETE /me/library, which takes full Spotify URIs (not bare IDs).
+NOTE: this /me/library request schema has not yet been verified against the live
+API; if unliking a track fails, this is the first place to check."
   (smudge-api-call-async
    "DELETE"
-   (concat "/me/tracks?ids=" (string-join track-ids ","))
-   nil
+   "/me/library"
+   (format "{\"uris\": [ %s ]}"
+           (mapconcat (lambda (id) (smudge-api-format-id "track" id)) track-ids ","))
    callback))
 
 (defun smudge-api-get-my-library-tracks (page callback)
