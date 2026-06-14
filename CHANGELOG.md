@@ -78,5 +78,8 @@ a `NOTE:` in-code):
   `error in process sentinel: Quit`; the request success callback is wrapped in
   `with-local-quit`, so the quit aborts cleanly and is still honoured once control
   returns to the command loop.
+- The playlist picker no longer errors with `stringp, nil` when the selection
+  doesn't resolve to a playlist id (e.g. raw input forced past `require-match`);
+  it reports "No playlist selected" instead.
 
 [feb2026]: https://developer.spotify.com/documentation/web-api/references/changes/february-2026

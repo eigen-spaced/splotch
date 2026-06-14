@@ -328,9 +328,14 @@ playlists are gathered before prompting."
       (lambda (choices)
         (if (null choices)
             (message "No modifiable playlists found (owned or collaborative)")
-          (let ((selected (completing-read "Select Playlist: " choices nil t)))
-            (unless (string= "" selected)
-              (funcall callback (cadr (assoc selected choices)))))))))))
+          (let* ((selected (completing-read "Select Playlist: " choices nil t))
+                 (id (cadr (assoc selected choices))))
+            ;; Guard a selection that doesn't resolve to an id (e.g. raw input
+            ;; forced past require-match) — a nil id would otherwise crash in
+            ;; `url-hexify-string' downstream with "stringp, nil".
+            (if (and (stringp id) (not (string-empty-p id)))
+                (funcall callback id)
+              (message "No playlist selected")))))))))
 
 (defun smudge-track-add ()
   "Add the track under the cursor on a playlist.  Prompt for the playlist."
