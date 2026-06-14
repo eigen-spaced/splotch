@@ -12,6 +12,13 @@ you are running on any platform with a network connection (including Windows - a
 and have a Spotify premium subscription, you can control an instance of Spotify via the Spotify
 Connect feature.
 
+> **Note — this is a fork.** [`eigen-spaced/smudge`](https://github.com/eigen-spaced/smudge)
+> tracks [`danielfm/smudge`](https://github.com/danielfm/smudge) and adds fixes for the
+> **Spotify Web API February 2026 breaking changes** (which broke search, playlist browsing and
+> track listing on upstream) plus a macOS focus option (see
+> [Keeping Focus After Starting a Track](#macos-keeping-focus-after-starting-a-track)).
+> The full list of changes is in [CHANGELOG.md](./CHANGELOG.md).
+
 ## Features
 
 * Spotify client integration for GNU/Linux (via D-Bus) and OS X (via AppleScript)
@@ -381,6 +388,22 @@ you can set the following, i.e.:
 ```
 
 Otherwise, it defaults to 4 spaces.
+
+## macOS: Keeping Focus After Starting a Track
+
+When controlling the local Spotify app on macOS (the default AppleScript
+transport), Spotify's `play track` command raises the Spotify app to the
+foreground — so starting a track from a Smudge buffer pulls you out of Emacs.
+(Play/pause, next and previous don't have this effect.)
+
+By default, Smudge records whichever app was frontmost, issues the play, then
+re-activates that app, so playback stays distraction-free. The play is run
+asynchronously and never blocks Emacs. To restore the old focus-stealing
+behaviour, set:
+
+```elisp
+(setq smudge-apple-return-focus-after-play nil)
+```
 
 ## License
 
