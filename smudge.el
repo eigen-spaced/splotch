@@ -155,6 +155,7 @@ Prompt for the NAME and whether it should be made PUBLIC."
     (define-key map (kbd "r") '("smudge/recently-played"     . smudge-recently-played))
     (define-key map (kbd "l") '("smudge/save-to-library"     . smudge-save-playing-track-to-library))
     (define-key map (kbd "k") '("smudge/remove-from-library" . smudge-remove-playing-track-from-library))
+    (define-key map (kbd "a") '("smudge/add-to-playlist"     . smudge-add-playing-track-to-playlist))
     map)
   "Track-related bindings.")
 

@@ -317,7 +317,13 @@ Call CALLBACK with the parsed JSON response."
     :data data
     :success (cl-function
               (lambda (&rest data &key response &allow-other-keys)
-                (when callback (funcall callback (request-response-data response)))))
+                ;; Callbacks may prompt the user (e.g. `completing-read') and run
+                ;; inside request's process sentinel; `with-local-quit' keeps a
+                ;; C-g there from surfacing as "error in process sentinel: Quit"
+                ;; (the quit is still honoured once control returns to the loop).
+                (when callback
+                  (with-local-quit
+                    (funcall callback (request-response-data response))))))
 
     :error (cl-function
             (lambda (&rest args &key error-thrown &allow-other-keys)
@@ -352,10 +358,16 @@ Call CALLBACK with the parsed JSON response."
   (gethash "message" json))
 
 (defun smudge-api-get-playlist-tracks (json)
-  "Return the list of tracks from the given playlist JSON object."
+  "Return the list of tracks from the given playlist JSON object.
+Each entry's `added_at' timestamp is copied onto the track object so the track
+view can show when the track was added to the playlist."
   ;; Feb-2026: each playlist-items entry's track field was renamed `track' -> `item'.
-  (mapcar (lambda (item)
-            (gethash "item" item))
+  (mapcar (lambda (entry)
+            (let ((track (gethash "item" entry))
+                  (added (gethash "added_at" entry)))
+              (when (and (hash-table-p track) added)
+                (puthash "added_at" added track))
+              track))
           (smudge-api-get-items json)))
 
 (defun smudge-api-get-track-album (json)

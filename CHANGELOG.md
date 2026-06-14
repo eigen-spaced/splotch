@@ -55,5 +55,28 @@ a `NOTE:` in-code):
   records whichever app was frontmost, issues the play, then re-activates that
   app — so starting a track from a Smudge buffer keeps you in Emacs. The play is
   issued asynchronously, so Emacs never blocks.
+- **`smudge-add-playing-track-to-playlist`**: add the currently playing track to
+  one of your playlists, picked with completion. Bound to `a` in the tracks
+  submap (`[prefix] t a`). Reuses the playlist picker, so it only offers
+  playlists you can modify.
+- **"Added" column** in the playlist track view: replaces the now-defunct
+  Popularity column with the date each track was added to the playlist
+  (`added_at`, formatted `YYYY-MM-DD`). Shown only in playlist views — track
+  search and album views, which have no such date, simply drop the column.
+
+### Changed
+
+- **Playlist picker** (`smudge-track-select-playlist`, used by `smudge-track-add`
+  and `smudge-add-playing-track-to-playlist`): now offers only playlists you can
+  modify (owned or collaborative) instead of every followed playlist — adding to
+  a followed playlist is rejected by the API. It also gathers **all** pages of
+  your playlists before prompting, rather than only the first ~50.
+
+### Fixed
+
+- A `C-g`/quit during an async prompt (e.g. the playlist picker) no longer prints
+  `error in process sentinel: Quit`; the request success callback is wrapped in
+  `with-local-quit`, so the quit aborts cleanly and is still honoured once control
+  returns to the command loop.
 
 [feb2026]: https://developer.spotify.com/documentation/web-api/references/changes/february-2026

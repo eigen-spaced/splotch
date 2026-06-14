@@ -224,6 +224,9 @@ Default to sortin tracks by number when listing the tracks from an album."
              (bound-and-true-p smudge-selected-playlist)
              (bound-and-true-p smudge-my-library))
       (setq tabulated-list-sort-key `("#" . nil)))
+    ;; Feb-2026 removed Track `popularity'; that column was always empty, so it
+    ;; was replaced with "Added" (the date the track was added to the playlist),
+    ;; shown only in playlist views (search/album results have no such date).
     (setq tabulated-list-format
           (vconcat (vector `("#" 3 ,(lambda (row-1 row-2)
                                       (< (+ (* 100 (smudge-api-get-disc-number (car row-1)))
@@ -236,8 +239,18 @@ Default to sortin tracks by number when listing the tracks from an album."
                            `("Time" 8 (lambda (row-1 row-2)
                                         (< (smudge-get-track-duration (car row-1))
                                            (smudge-get-track-duration (car row-2))))))
-                   (unless (bound-and-true-p smudge-selected-album)
-                     (vector '("Popularity" 14 t)))))))
+                   (when (bound-and-true-p smudge-selected-playlist)
+                     (vector '("Added" 12 t)))))))
+
+(defun smudge-track-added-date (song)
+  "Return SONG's playlist `added_at' as a YYYY-MM-DD string, or an empty string.
+The timestamp is stashed on the track by `smudge-api-get-playlist-tracks'."
+  (let ((added (and (hash-table-p song) (gethash "added_at" song))))
+    (if (stringp added)
+        (condition-case nil
+            (format-time-string "%Y-%m-%d" (date-to-time added))
+          (error (substring added 0 (min 10 (length added)))))
+      "")))
 
 (defun smudge-track-search-print (songs page)
   "Append SONGS to the PAGE of track view."
@@ -264,8 +277,8 @@ Default to sortin tracks by number when listing the tracks from an album."
                                           'help-echo (format "Show %s's tracks" album-name)
                                           'artist-or-album 'album))
                               (smudge-api-get-track-duration-formatted song)
-                              (unless (bound-and-true-p smudge-selected-album)
-                                (smudge-api-popularity-bar (smudge-api-get-track-popularity song)))))
+                              (when (bound-and-true-p smudge-selected-playlist)
+                                (smudge-track-added-date song))))
                 entries))))
     (smudge-track-search-set-list-format)
     (when (eq 1 page) (setq-local tabulated-list-entries nil))
@@ -280,21 +293,44 @@ Default to sortin tracks by number when listing the tracks from an album."
       (smudge-track-search-mode)
       (smudge-track-album-tracks-update album 1))))
 
+(defun smudge-track--collect-modifiable-playlists (user-id page acc callback)
+  "Accumulate all of USER-ID's modifiable playlists across pages, then CALLBACK.
+Start at PAGE, accumulating (NAME ID) entries into ACC.  A playlist is
+modifiable if USER-ID owns it or it is collaborative; followed playlists are
+skipped because the API rejects writes to them.  Pages are followed until one
+comes back not full, so every playlist is offered (not just the first page)."
+  (smudge-api-user-playlists
+   user-id page
+   (lambda (json)
+     (let* ((items (smudge-api-get-items json))
+            (acc (append acc
+                         (delq nil
+                               (mapcar
+                                (lambda (a)
+                                  (when (or (equal user-id (smudge-api-get-playlist-owner-id a))
+                                            (eq t (gethash "collaborative" a)))
+                                    (list (smudge-api-get-item-name a) (smudge-api-get-item-id a))))
+                                items)))))
+       (if (and items (= (length items) smudge-api-search-limit))
+           (smudge-track--collect-modifiable-playlists user-id (1+ page) acc callback)
+         (funcall callback acc))))))
+
 (defun smudge-track-select-playlist (callback)
-  "Call CALLBACK with results of user playlist selection."
+  "Call CALLBACK with the id of a playlist the user selects.
+Only playlists the user can modify (owned or collaborative) are offered, since
+the API rejects adding to a playlist you merely follow.  All pages of your
+playlists are gathered before prompting."
   (interactive)
   (smudge-api-current-user
    (lambda (user)
-     (smudge-api-user-playlists
-      (smudge-api-get-item-id user)
-      1
-      (lambda (json)
-        (if-let* ((choices (mapcar (lambda (a)
-                                     (list (smudge-api-get-item-name a) (smudge-api-get-item-id a)))
-                                   (smudge-api-get-items json)))
-                  (selected (completing-read "Select Playlist: " choices)))
+     (smudge-track--collect-modifiable-playlists
+      (smudge-api-get-item-id user) 1 nil
+      (lambda (choices)
+        (if (null choices)
+            (message "No modifiable playlists found (owned or collaborative)")
+          (let ((selected (completing-read "Select Playlist: " choices nil t)))
             (unless (string= "" selected)
-              (funcall callback (cadr (assoc selected choices))))))))))
+              (funcall callback (cadr (assoc selected choices)))))))))))
 
 (defun smudge-track-add ()
   "Add the track under the cursor on a playlist.  Prompt for the playlist."
@@ -379,6 +415,24 @@ Default to sortin tracks by number when listing the tracks from an album."
           (message "Removed song: %s - %s"
                    (gethash "name" (car (gethash "artists" track)))
                    (gethash "name" track))))))))
+
+(defun smudge-add-playing-track-to-playlist ()
+  "Add the currently playing track to one of your playlists.
+Prompts with completion for a playlist you can modify (owned or collaborative)."
+  (interactive)
+  (smudge-api-get-player-status
+   (lambda (status)
+     (let* ((track (and (hash-table-p status) (gethash "item" status)))
+            (track-id (and (hash-table-p track) (gethash "id" track)))
+            (track-name (and (hash-table-p track) (smudge-api-get-item-name track))))
+       (if (not track-id)
+           (message "No currently playing track to add")
+         (smudge-track-select-playlist
+          (lambda (playlist-id)
+            (smudge-api-playlist-add-tracks
+             nil playlist-id (list track-id)
+             (lambda (_)
+               (message "Added \"%s\" to the selected playlist" track-name))))))))))
 
 
 (provide 'smudge-track)
