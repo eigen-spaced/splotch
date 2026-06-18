@@ -1,4 +1,4 @@
-;;; smudge-lyrics.el --- Fetch lyrics for the current track  -*- lexical-binding: t; -*-
+;;; splotch-lyrics.el --- Fetch lyrics for the current track  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2014-2025 Daniel Martins
 
@@ -10,7 +10,7 @@
 
 ;;; Code:
 
-(require 'smudge-controller)
+(require 'splotch-controller)
 (require 'json)
 (require 'subr-x)
 (require 'url)
@@ -19,61 +19,61 @@
 (defvar url-http-response-status)
 (defvar url-request-timeout)
 
-(declare-function smudge-controller-player-status "smudge-controller")
+(declare-function splotch-controller-player-status "splotch-controller")
 
-(defgroup smudge-lyrics nil
-  "Fetch lyrics for the current Smudge track."
-  :group 'smudge)
+(defgroup splotch-lyrics nil
+  "Fetch lyrics for the current Splotch track."
+  :group 'splotch)
 
-(defcustom smudge-lyrics-auto-popup nil
+(defcustom splotch-lyrics-auto-popup nil
   "When non-nil, fetch lyrics automatically on track changes."
   :type 'boolean
-  :group 'smudge-lyrics)
+  :group 'splotch-lyrics)
 
-(defcustom smudge-lyrics-service-url
+(defcustom splotch-lyrics-service-url
   "https://lrclib.net/api/get"
   "Base URL for LRCLIB lyrics."
   :type 'string
-  :group 'smudge-lyrics)
+  :group 'splotch-lyrics)
 
-(defcustom smudge-lyrics-timeout 15
+(defcustom splotch-lyrics-timeout 15
   "Timeout in seconds for lyrics requests."
   :type 'integer
-  :group 'smudge-lyrics)
+  :group 'splotch-lyrics)
 
-(defcustom smudge-lyrics-debug nil
+(defcustom splotch-lyrics-debug nil
   "When non-nil, log a snippet of the raw response body."
   :type 'boolean
-  :group 'smudge-lyrics)
+  :group 'splotch-lyrics)
 
-(defcustom smudge-lyrics-buffer-name "*Smudge Lyrics*"
+(defcustom splotch-lyrics-buffer-name "*Splotch Lyrics*"
   "Name of the buffer used to display lyrics."
   :type 'string
-  :group 'smudge-lyrics)
+  :group 'splotch-lyrics)
 
-(defvar smudge-lyrics--last-track nil
+(defvar splotch-lyrics--last-track nil
   "Cons of artist and title for the last lyrics request.")
 
-(defvar smudge-lyrics--pending-token nil
+(defvar splotch-lyrics--pending-token nil
   "Token for the latest lyrics request.")
 
-(defvar smudge-lyrics--manual-pending nil
+(defvar splotch-lyrics--manual-pending nil
   "Non-nil when a manual request is waiting for metadata.")
 
-(defvar smudge-lyrics-mode-map
+(defvar splotch-lyrics-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map special-mode-map)
     (define-key map (kbd "q") #'quit-window)
     map)
-  "Keymap for `smudge-lyrics-mode'.")
+  "Keymap for `splotch-lyrics-mode'.")
 
-(define-derived-mode smudge-lyrics-mode special-mode "Smudge-Lyrics"
-  "Major mode for displaying Smudge lyrics."
+(define-derived-mode splotch-lyrics-mode special-mode "Splotch-Lyrics"
+  "Major mode for displaying Splotch lyrics."
   (setq buffer-read-only t)
   (setq-local buffer-offer-save nil)
   (setq-local truncate-lines nil))
 
-(defun smudge-lyrics--clean (string)
+(defun splotch-lyrics--clean (string)
   "Return STRING stripped of common remix annotations."
   (let ((text (string-trim string)))
     (setq text (replace-regexp-in-string " *[(\\[].*?[])]" "" text))
@@ -82,7 +82,7 @@
     (setq text (replace-regexp-in-string " *ft\\..*$" "" text))
     (string-trim text)))
 
-(defun smudge-lyrics--track-from-metadata (metadata)
+(defun splotch-lyrics--track-from-metadata (metadata)
   "Return a track plist from METADATA."
   (when (hash-table-p metadata)
     (let* ((artist (gethash "artist" metadata))
@@ -96,46 +96,46 @@
               :duration (when (numberp dur-ms)
                           (max 1 (round (/ dur-ms 1000.0)))))))))
 
-(defun smudge-lyrics--lrclib-url (artist title &optional duration)
+(defun splotch-lyrics--lrclib-url (artist title &optional duration)
   "Return LRCLIB request URL for ARTIST and TITLE, optionally including DURATION."
   (let* ((params `(("artist_name" . ,artist)
                    ("track_name" . ,title)))
          (params (if duration
                      (append params `(("duration" . ,(number-to-string duration))))
                    params)))
-    (concat smudge-lyrics-service-url "?"
+    (concat splotch-lyrics-service-url "?"
             (mapconcat (lambda (kv)
                          (format "%s=%s" (car kv) (url-hexify-string (cdr kv))))
                        params "&"))))
 
-(defun smudge-lyrics--parse-json-body (body)
+(defun splotch-lyrics--parse-json-body (body)
   "Parse BODY into a hash table."
   (when (and body (not (string-empty-p (string-trim body))))
     (condition-case nil
         (json-parse-string body :object-type 'hash-table)
       (error nil))))
 
-(defun smudge-lyrics--show-buffer (artist title lyrics &optional select)
+(defun splotch-lyrics--show-buffer (artist title lyrics &optional select)
   "Display LYRICS for ARTIST and TITLE.
 When SELECT is non-nil, select the lyrics buffer."
-  (let ((buffer (get-buffer-create smudge-lyrics-buffer-name)))
+  (let ((buffer (get-buffer-create splotch-lyrics-buffer-name)))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert (format "%s — %s\n\n" artist title))
         (insert lyrics))
       (goto-char (point-min))
-      (smudge-lyrics-mode))
+      (splotch-lyrics-mode))
     (if select
         (pop-to-buffer buffer)
       (display-buffer buffer))))
 
-(defun smudge-lyrics--handle-response (status artist title token)
+(defun splotch-lyrics--handle-response (status artist title token)
   "Handle lyrics response STATUS for ARTIST and TITLE."
   (let* ((urlbuf (current-buffer))
          (select (and (listp token) (plist-get token :select)))
-         (stale (and smudge-lyrics--pending-token
-                     (not (equal token smudge-lyrics--pending-token)))))
+         (stale (and splotch-lyrics--pending-token
+                     (not (equal token splotch-lyrics--pending-token)))))
     (unwind-protect
         (if stale
             (message "Lyrics response ignored (stale)")
@@ -148,9 +148,9 @@ When SELECT is non-nil, select the lyrics buffer."
                 (re-search-forward "\r?\n\r?\n" nil 'move)
                 (let* ((code url-http-response-status)
                        (body (buffer-substring-no-properties (point) (point-max)))
-                       (json (smudge-lyrics--parse-json-body body))
+                       (json (splotch-lyrics--parse-json-body body))
                        (lyrics (and json (gethash "plainLyrics" json))))
-                  (when smudge-lyrics-debug
+                  (when splotch-lyrics-debug
                     (message "Lyrics raw body: %s"
                              (truncate-string-to-width body 200 0 nil "…")))
                   (cond
@@ -159,71 +159,71 @@ When SELECT is non-nil, select the lyrics buffer."
                    ((and (numberp code) (>= code 400))
                     (message "Lyrics service error: %s" code))
                    ((and lyrics (not (string-empty-p (string-trim lyrics))))
-                    (smudge-lyrics--show-buffer artist title lyrics select))
+                    (splotch-lyrics--show-buffer artist title lyrics select))
                    (t
                     (message "No lyrics returned for %s — %s" artist title))))))))
-      (when (equal token smudge-lyrics--pending-token)
-        (setq smudge-lyrics--pending-token nil))
+      (when (equal token splotch-lyrics--pending-token)
+        (setq splotch-lyrics--pending-token nil))
       (when (buffer-live-p urlbuf)
         (kill-buffer urlbuf)))))
 
-(defun smudge-lyrics--request (artist title duration token)
+(defun splotch-lyrics--request (artist title duration token)
   "Request lyrics for ARTIST and TITLE using DURATION and TOKEN."
-  (let* ((artist (smudge-lyrics--clean artist))
-         (title (smudge-lyrics--clean title))
-         (url (smudge-lyrics--lrclib-url artist title duration))
+  (let* ((artist (splotch-lyrics--clean artist))
+         (title (splotch-lyrics--clean title))
+         (url (splotch-lyrics--lrclib-url artist title duration))
          (url-request-method "GET")
-         (url-request-timeout smudge-lyrics-timeout))
-    (url-retrieve url #'smudge-lyrics--handle-response
+         (url-request-timeout splotch-lyrics-timeout))
+    (url-retrieve url #'splotch-lyrics--handle-response
                   (list artist title token) t t)))
 
-(defun smudge-lyrics--request-track (track &optional select)
+(defun splotch-lyrics--request-track (track &optional select)
   "Request lyrics for TRACK plist.
 When SELECT is non-nil, select the lyrics buffer on success."
   (let* ((artist (plist-get track :artist))
          (title (plist-get track :title))
          (duration (plist-get track :duration))
          (token (list :id (float-time) :select select)))
-    (setq smudge-lyrics--pending-token token)
-    (smudge-lyrics--request artist title duration token)
+    (setq splotch-lyrics--pending-token token)
+    (splotch-lyrics--request artist title duration token)
     (message "Fetching lyrics for %s — %s..." artist title)))
 
-(defun smudge-lyrics--track-id (track)
+(defun splotch-lyrics--track-id (track)
   "Return a stable identifier for TRACK."
   (cons (plist-get track :artist)
         (plist-get track :title)))
 
-(defun smudge-lyrics--maybe-request (track &optional force select)
+(defun splotch-lyrics--maybe-request (track &optional force select)
   "Request lyrics for TRACK unless already fetched.
 When FORCE is non-nil, always request lyrics.
 When SELECT is non-nil, select the lyrics buffer on success."
-  (let ((id (smudge-lyrics--track-id track)))
-    (when (or force (not (equal id smudge-lyrics--last-track)))
-      (setq smudge-lyrics--last-track id)
-      (smudge-lyrics--request-track track select))))
+  (let ((id (splotch-lyrics--track-id track)))
+    (when (or force (not (equal id splotch-lyrics--last-track)))
+      (setq splotch-lyrics--last-track id)
+      (splotch-lyrics--request-track track select))))
 
-(defun smudge-lyrics--handle-metadata (metadata)
-  "React to METADATA updates from Smudge."
-  (let ((track (smudge-lyrics--track-from-metadata metadata))
+(defun splotch-lyrics--handle-metadata (metadata)
+  "React to METADATA updates from Splotch."
+  (let ((track (splotch-lyrics--track-from-metadata metadata))
         (manual-requested nil))
-    (when smudge-lyrics--manual-pending
-      (setq smudge-lyrics--manual-pending nil)
+    (when splotch-lyrics--manual-pending
+      (setq splotch-lyrics--manual-pending nil)
       (if track
           (progn
             (setq manual-requested t)
-            (smudge-lyrics--maybe-request track t t))
+            (splotch-lyrics--maybe-request track t t))
         (message "No active track available for lyrics.")))
-    (when (and smudge-lyrics-auto-popup track (not manual-requested))
-      (smudge-lyrics--maybe-request track nil nil))))
+    (when (and splotch-lyrics-auto-popup track (not manual-requested))
+      (splotch-lyrics--maybe-request track nil nil))))
 
 ;;;###autoload
-(defun smudge-lyrics-popup ()
-  "Fetch lyrics for the current Smudge track."
+(defun splotch-lyrics-popup ()
+  "Fetch lyrics for the current Splotch track."
   (interactive)
-  (setq smudge-lyrics--manual-pending t)
-  (smudge-controller-player-status))
+  (setq splotch-lyrics--manual-pending t)
+  (splotch-controller-player-status))
 
-(add-hook 'smudge-controller-metadata-hook #'smudge-lyrics--handle-metadata)
+(add-hook 'splotch-controller-metadata-hook #'splotch-lyrics--handle-metadata)
 
-(provide 'smudge-lyrics)
-;;; smudge-lyrics.el ends here
+(provide 'splotch-lyrics)
+;;; splotch-lyrics.el ends here

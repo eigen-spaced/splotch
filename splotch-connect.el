@@ -1,4 +1,4 @@
-;;; smudge-connect.el --- Control remote and local Spotify instances  -*- lexical-binding: t; -*-
+;;; splotch-connect.el --- Control remote and local Spotify instances  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2019-2025 Jason Dufair, Daniel Martins
 
@@ -8,16 +8,16 @@
 
 ;; This library uses the "connect" APIs to control transport functions of
 ;; remote and local instances of Spotify clients.  It implements a set of
-;; multimethod-like functions that are dispatched in smudge-controller.el.
+;; multimethod-like functions that are dispatched in splotch-controller.el.
 
-;; smudge-connect.el --- Smudge transport for the Spotify Connect API
+;; splotch-connect.el --- Splotch transport for the Spotify Connect API
 
 ;;; Code:
 
-(require 'smudge-api)
-(require 'smudge-controller)
+(require 'splotch-api)
+(require 'splotch-controller)
 
-(defun smudge-connect-player-status ()
+(defun splotch-connect-player-status ()
   "Get the player status of the currently playing device, if any.
 Returns a JSON string in the format:
 {
@@ -30,7 +30,7 @@ Returns a JSON string in the format:
   \"player_repeating\": \"context\"
 }"
   (condition-case err
-      (smudge-api-get-player-status
+      (splotch-api-get-player-status
        (lambda (status)
          (condition-case parse-err
              (if-let* ((status status)
@@ -52,8 +52,8 @@ Returns a JSON string in the format:
                               (format "\"player_repeating\":%s"
                                       (if (string= (gethash "repeat_state" status) "off") "false" "true"))
                               "}")))
-                 (smudge-controller-update-metadata json)
-               (smudge-controller-update-metadata nil))
+                 (splotch-controller-update-metadata json)
+               (splotch-controller-update-metadata nil))
            (error
             ;; Keep existing status on parse errors to avoid clearing modeline
             nil))))
@@ -62,140 +62,140 @@ Returns a JSON string in the format:
      nil)))
 
 ;;;###autoload
-(defun smudge-select-device ()
+(defun splotch-select-device ()
   "Allow for the selection of a device via Spotify Connect for transport functions."
   (interactive)
-  (smudge-api-current-user
+  (splotch-api-current-user
    (lambda (user)
      (if (not (string= (gethash "product" user) "premium"))
          (message "This feature requires a Spotify premium subscription.")
        (let ((buffer (get-buffer-create "*Devices*")))
          (with-current-buffer buffer
-           (smudge-device-select-mode)
-           (smudge-device-select-update)))))))
+           (splotch-device-select-mode)
+           (splotch-device-select-update)))))))
 
-(defmacro smudge-connect-when-device-active (body)
+(defmacro splotch-connect-when-device-active (body)
   "Evaluate BODY when there is an active device, otherwise show an error message."
-  `(smudge-api-device-list
+  `(splotch-api-device-list
     (lambda (json)
       (if-let ((json json)
                (devices (gethash "devices" json))
                (active (> (length (seq-filter (lambda (dev) (eq (gethash "is_active" dev) t)) devices)) 0)))
           (progn ,body)
         (when (y-or-n-p "No active device. Would you like to select one?")
-          (smudge-select-device))))))
+          (splotch-select-device))))))
 
-(defun smudge-connect-player-play-track (uri &optional context)
+(defun splotch-connect-player-play-track (uri &optional context)
   "Play a track URI via Spotify Connect in an optional CONTEXT."
-  (smudge-connect-when-device-active
-   (smudge-api-play nil uri context)))
+  (splotch-connect-when-device-active
+   (splotch-api-play nil uri context)))
 
-(defun smudge-connect-player-pause ()
+(defun splotch-connect-player-pause ()
   "Pause the currently playing track."
-  (smudge-connect-when-device-active
-   (smudge-api-pause)))
+  (splotch-connect-when-device-active
+   (splotch-api-pause)))
 
-(defun smudge-connect-player-toggle-play ()
+(defun splotch-connect-player-toggle-play ()
   "Toggle playing status of current track."
-  (smudge-connect-when-device-active
-   (smudge-api-get-player-status
+  (splotch-connect-when-device-active
+   (splotch-api-get-player-status
     (lambda (status)
       (if status
           (if (not (eq (gethash "is_playing" status) :false))
-              (smudge-api-pause)
-            (smudge-api-play)))))))
+              (splotch-api-pause)
+            (splotch-api-play)))))))
 
-(defun smudge-connect-player-next-track ()
+(defun splotch-connect-player-next-track ()
   "Skip to the next track."
-  (smudge-connect-when-device-active
-   (smudge-api-next)))
+  (splotch-connect-when-device-active
+   (splotch-api-next)))
 
-(defun smudge-connect-player-previous-track ()
+(defun splotch-connect-player-previous-track ()
   "Skip to the previous track."
-  (smudge-connect-when-device-active
-   (smudge-api-previous)))
+  (splotch-connect-when-device-active
+   (splotch-api-previous)))
 
-(defun smudge-connect-volume-up ()
+(defun splotch-connect-volume-up ()
   "Turn up the volume on the actively playing device."
-  (smudge-connect-when-device-active
-   (smudge-api-get-player-status
+  (splotch-connect-when-device-active
+   (splotch-api-get-player-status
     (lambda (status)
-      (let ((new-volume (min (+ (smudge-connect-get-volume status) 10) 100)))
-        (smudge-api-set-volume
-         (smudge-connect-get-device-id status)
+      (let ((new-volume (min (+ (splotch-connect-get-volume status) 10) 100)))
+        (splotch-api-set-volume
+         (splotch-connect-get-device-id status)
          new-volume
          (lambda (_)
            (message "Volume increased to %d%%" new-volume))))))))
 
-(defun smudge-connect-volume-down ()
+(defun splotch-connect-volume-down ()
   "Turn down the volume (for what?) on the actively playing device."
-  (smudge-connect-when-device-active
-   (smudge-api-get-player-status
+  (splotch-connect-when-device-active
+   (splotch-api-get-player-status
     (lambda (status)
-      (let ((new-volume (max (- (smudge-connect-get-volume status) 10) 0)))
-        (smudge-api-set-volume
-         (smudge-connect-get-device-id status)
+      (let ((new-volume (max (- (splotch-connect-get-volume status) 10) 0)))
+        (splotch-api-set-volume
+         (splotch-connect-get-device-id status)
          new-volume
          (lambda (_)
            (message "Volume decreased to %d%%" new-volume))))))))
 
-(defun smudge-connect-volume-mute-unmute ()
+(defun splotch-connect-volume-mute-unmute ()
   "Mute/unmute the actively playing device by setting the volume to 0."
-  (smudge-connect-when-device-active
-   (smudge-api-get-player-status
+  (splotch-connect-when-device-active
+   (splotch-api-get-player-status
     (lambda (status)
-      (let ((volume (smudge-connect-get-volume status)))
+      (let ((volume (splotch-connect-get-volume status)))
         (if (eq volume 0)
-            (smudge-api-set-volume (smudge-connect-get-device-id status) 100
+            (splotch-api-set-volume (splotch-connect-get-device-id status) 100
                                    (lambda (_) (message "Volume unmuted")))
-          (smudge-api-set-volume (smudge-connect-get-device-id status) 0
+          (splotch-api-set-volume (splotch-connect-get-device-id status) 0
                                  (lambda (_) (message "Volume muted")))))))))
 
-(defun smudge-connect-toggle-repeat ()
+(defun splotch-connect-toggle-repeat ()
   "Toggle repeat for the current track."
-  (smudge-connect-when-device-active
-   (smudge-api-get-player-status
+  (splotch-connect-when-device-active
+   (splotch-api-get-player-status
     (lambda (status)
-      (let ((is-repeating (smudge-connect--is-repeating status)))
-        (smudge-api-repeat (if is-repeating "off" "context")
+      (let ((is-repeating (splotch-connect--is-repeating status)))
+        (splotch-api-repeat (if is-repeating "off" "context")
                            (lambda (_)
                              (if is-repeating
                                  (message "Repeat turned off")
                                (message "Repeat turned on")))))))))
 
-(defun smudge-connect-toggle-shuffle ()
+(defun splotch-connect-toggle-shuffle ()
   "Toggle shuffle for the current track."
-  (smudge-connect-when-device-active
-   (smudge-api-get-player-status
+  (splotch-connect-when-device-active
+   (splotch-api-get-player-status
     (lambda (status)
-      (let ((is-shuffling (smudge-connect--is-shuffling status)))
-        (smudge-api-shuffle (if is-shuffling "false" "true")
+      (let ((is-shuffling (splotch-connect--is-shuffling status)))
+        (splotch-api-shuffle (if is-shuffling "false" "true")
                             (lambda (_)
                               (if is-shuffling
                                   (message "Shuffling turned off")
                                 (message "Shuffling turned on")))))))))
 
-(defun smudge-connect-get-device-id (player-status)
+(defun splotch-connect-get-device-id (player-status)
   "Get the id if from PLAYER-STATUS of the currently playing device, if any."
   (when player-status
     (gethash "id" (gethash "device" player-status))))
 
-(defun smudge-connect-get-volume (player-status)
+(defun splotch-connect-get-volume (player-status)
   "Get the volume from PLAYER-STATUS of the currently playing device, if any."
   (when player-status
     (gethash "volume_percent" (gethash "device" player-status))))
 
-(defun smudge-connect--is-shuffling (player-status)
+(defun splotch-connect--is-shuffling (player-status)
   "Business logic for shuffling state of PLAYER-STATUS."
   (and player-status
        (not (eq (gethash "shuffle_state" player-status) :false))))
 
-(defun smudge-connect--is-repeating (player-status)
+(defun splotch-connect--is-repeating (player-status)
   "Business logic for repeat state of PLAYER-STATUS."
   (and player-status
        (string= (gethash "repeat_state" player-status) "context")))
 
 
-(provide 'smudge-connect)
+(provide 'splotch-connect)
 
-;;; smudge-connect.el ends here
+;;; splotch-connect.el ends here

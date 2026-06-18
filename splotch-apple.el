@@ -1,4 +1,4 @@
-;;; smudge-apple.el --- Apple-specific code for Smudge  -*- lexical-binding: t; -*-
+;;; splotch-apple.el --- Apple-specific code for Splotch  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2014-2025 Daniel Martins
 
@@ -8,29 +8,29 @@
 
 ;; This library handles controlling Spotify via Applescript commands. It
 ;; implements a set of multimethod-like functions that are dispatched in
-;; smudge-controller.el.
+;; splotch-controller.el.
 
 ;;; Code:
 
-(require 'smudge-controller)
+(require 'splotch-controller)
 
-(defcustom smudge-osascript-bin-path "/usr/bin/osascript"
+(defcustom splotch-osascript-bin-path "/usr/bin/osascript"
   "Path to `osascript' binary."
-  :group 'smudge
+  :group 'splotch
   :type 'string)
 
-(defcustom smudge-apple-return-focus-after-play t
+(defcustom splotch-apple-return-focus-after-play t
   "When non-nil, restore window focus after starting a track.
 Spotify's AppleScript `play track' command raises the Spotify app to the
 foreground (unlike playpause/next/previous, which don't), so starting a track
-from a Smudge buffer yanks you out of Emacs.  With this enabled, Smudge records
+from a Splotch buffer yanks you out of Emacs.  With this enabled, Splotch records
 whichever app was frontmost, issues the play, then re-activates that app — so
 playback stays distraction-free.  macOS only."
-  :group 'smudge
+  :group 'splotch
   :type 'boolean)
 
 ;; Do not change this unless you know what you're doing
-(defconst smudge-apple-player-status-script "
+(defconst splotch-apple-player-status-script "
 # Source: https://github.com/andrehaveman/smudge-node-applescript
 on escape_quotes(string_to_escape)
   set AppleScript's text item delimiters to the \"\\\"\"
@@ -57,80 +57,80 @@ end tell
 ")
 
 ;; Write script to a temp file
-(defconst smudge-apple-player-status-script-file
-  (make-temp-file "smudge.el" nil nil smudge-apple-player-status-script))
+(defconst splotch-apple-player-status-script-file
+  (make-temp-file "splotch.el" nil nil splotch-apple-player-status-script))
 
-(defun smudge-apple-command-line (cmd)
+(defun splotch-apple-command-line (cmd)
   "Return a command line prefix for any Spotify command CMD."
   (format "%s -e %s"
-          smudge-osascript-bin-path
+          splotch-osascript-bin-path
           (shell-quote-argument (format "tell application \"Spotify\" to %s" cmd))))
 
-(defun smudge-apple-command (cmd)
+(defun splotch-apple-command (cmd)
   "Send the given CMD to the Spotify client.
 Return the resulting status string."
   (replace-regexp-in-string
    "\n$" ""
-   (shell-command-to-string (smudge-apple-command-line cmd))))
+   (shell-command-to-string (splotch-apple-command-line cmd))))
 
-(defun smudge-apple-set-player-status-from-process-output (process output)
+(defun splotch-apple-set-player-status-from-process-output (process output)
   "Set the OUTPUT of the player status PROCESS to the player status."
-  (smudge-controller-update-metadata output)
+  (splotch-controller-update-metadata output)
   (with-current-buffer (process-buffer process)
     (delete-region (point-min) (point-max))))
 
-(defun smudge-apple-player-status ()
+(defun splotch-apple-player-status ()
   "Update the player status to display the current Spotify player status."
-  (let* ((process-name "smudge-player-status")
+  (let* ((process-name "splotch-player-status")
          (process-status (process-status process-name))
-         (cmd (format "%s %s" smudge-osascript-bin-path smudge-apple-player-status-script-file)))
+         (cmd (format "%s %s" splotch-osascript-bin-path splotch-apple-player-status-script-file)))
     (unless process-status
       (let* ((default-directory user-emacs-directory)
-             (process (start-process-shell-command process-name "*smudge-player-status*" cmd)))
-        (set-process-filter process 'smudge-apple-set-player-status-from-process-output)))))
+             (process (start-process-shell-command process-name "*splotch-player-status*" cmd)))
+        (set-process-filter process 'splotch-apple-set-player-status-from-process-output)))))
 
-(defun smudge-apple-player-state ()
+(defun splotch-apple-player-state ()
   "Dispatch get player state."
-  (smudge-apple-command "get player state"))
+  (splotch-apple-command "get player state"))
 
-(defun smudge-apple-player-toggle-play ()
+(defun splotch-apple-player-toggle-play ()
   "Dispatch playpause."
-  (smudge-apple-command "playpause"))
+  (splotch-apple-command "playpause"))
 
-(defun smudge-apple-player-next-track ()
+(defun splotch-apple-player-next-track ()
   "Dispatch next track."
-  (smudge-apple-command "next track"))
+  (splotch-apple-command "next track"))
 
-(defun smudge-apple-player-previous-track ()
+(defun splotch-apple-player-previous-track ()
   "Dispatch previous track."
-  (smudge-apple-command "previous track"))
+  (splotch-apple-command "previous track"))
 
-(defun smudge-apple-volume-up ()
+(defun splotch-apple-volume-up ()
   "Send message about inability to change volume."
   (message "Changing the volume not supported by the Spotify AppleScript client"))
 
-(defun smudge-apple-volume-down ()
+(defun splotch-apple-volume-down ()
   "Send message about inability to change volume."
   (message "Changing the volume not supported by the Spotify AppleScript client"))
 
-(defun smudge-apple-volume-mute-unmute ()
+(defun splotch-apple-volume-mute-unmute ()
   "Send message about inability to change volume."
   (message "Changing the volume not supported by the Spotify AppleScript client"))
 
-(defun smudge-apple-toggle-repeat ()
+(defun splotch-apple-toggle-repeat ()
   "Dispatch repeat command."
-  (smudge-apple-command "set repeating to not repeating"))
+  (splotch-apple-command "set repeating to not repeating"))
 
-(defun smudge-apple-toggle-shuffle ()
+(defun splotch-apple-toggle-shuffle ()
   "Dispatch shuffle command."
-  (smudge-apple-command "set shuffling to not shuffling"))
+  (splotch-apple-command "set shuffling to not shuffling"))
 
-(defun smudge-apple-player-play-track (track-id context-id)
+(defun splotch-apple-player-play-track (track-id context-id)
   "Dispatch message about playing TRACK-ID in CONTEXT-ID.
-When `smudge-apple-return-focus-after-play' is non-nil, capture the frontmost
+When `splotch-apple-return-focus-after-play' is non-nil, capture the frontmost
 app, play, and re-activate it so Spotify doesn't steal focus.  Done in a single
 asynchronous osascript so Emacs never blocks and the ordering is deterministic."
-  (if smudge-apple-return-focus-after-play
+  (if splotch-apple-return-focus-after-play
       (let ((script
              (format (concat
                       "tell application \"System Events\" to"
@@ -139,8 +139,8 @@ asynchronous osascript so Emacs never blocks and the ordering is deterministic."
                       "delay 0.1\n"
                       "tell application frontApp to activate")
                      track-id context-id)))
-        (start-process "smudge-play" nil smudge-osascript-bin-path "-e" script))
-    (smudge-apple-command (format "play track \"%s\" in context \"%s\"" track-id context-id))))
+        (start-process "splotch-play" nil splotch-osascript-bin-path "-e" script))
+    (splotch-apple-command (format "play track \"%s\" in context \"%s\"" track-id context-id))))
 
-(provide 'smudge-apple)
-;;; smudge-apple.el ends here
+(provide 'splotch-apple)
+;;; splotch-apple.el ends here
