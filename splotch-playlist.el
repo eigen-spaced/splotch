@@ -123,20 +123,16 @@ PLAYLIST defaults to the playlist under the cursor (in a playlist list buffer)."
       (splotch-track-playlist-tracks-update 1))))
 
 (defvar splotch-playlist--all-cache nil
-  "Cached alist of (NAME . PLAYLIST) for the current user's playlists.
-Gathered across all pages on first use of `splotch-open-playlist' and reused
-until Emacs restarts, a playlist is created, or a `\\[universal-argument]'
-refresh — so the picker does not re-fetch every page each time it is opened.")
+  "Cached (NAME . PLAYLIST) alist of the user's playlists for `splotch-open-playlist'.
+Reused across opens until Emacs restarts, a playlist is created, or a refresh.")
 
 (defun splotch-playlist-invalidate-cache ()
   "Drop the cached playlist list used by `splotch-open-playlist'."
   (setq splotch-playlist--all-cache nil))
 
 (defun splotch-playlist--collect-all (user-id page acc callback)
-  "Accumulate every page of USER-ID's playlists into ACC, then call CALLBACK.
-ACC is an alist of (NAME . PLAYLIST).  Pages are followed until one comes back
-not full, so all of the user's playlists are gathered — owned, collaborative and
-followed alike, since any can be opened for viewing."
+  "Accumulate every page of USER-ID's playlists into ACC (a (NAME . PLAYLIST)
+alist) starting at PAGE, then call CALLBACK.  Includes followed playlists too."
   (splotch-api-user-playlists
    user-id page
    (lambda (json)

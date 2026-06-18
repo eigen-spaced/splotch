@@ -224,9 +224,8 @@ Default to sortin tracks by number when listing the tracks from an album."
              (bound-and-true-p splotch-selected-playlist)
              (bound-and-true-p splotch-my-library))
       (setq tabulated-list-sort-key `("#" . nil)))
-    ;; Feb-2026 removed Track `popularity'; that column was always empty, so it
-    ;; was replaced with "Added" (the date the track was added to the playlist),
-    ;; shown only in playlist views (search/album results have no such date).
+    ;; Feb-2026 removed Track `popularity' (column always empty); playlist views
+    ;; show "Added" (date added) instead — search/album views have no such date.
     (setq tabulated-list-format
           (vconcat (vector `("#" 3 ,(lambda (row-1 row-2)
                                       (< (+ (* 100 (splotch-api-get-disc-number (car row-1)))
@@ -294,11 +293,8 @@ The timestamp is stashed on the track by `splotch-api-get-playlist-tracks'."
       (splotch-track-album-tracks-update album 1))))
 
 (defun splotch-track--collect-modifiable-playlists (user-id page acc callback)
-  "Accumulate all of USER-ID's modifiable playlists across pages, then CALLBACK.
-Start at PAGE, accumulating (NAME ID) entries into ACC.  A playlist is
-modifiable if USER-ID owns it or it is collaborative; followed playlists are
-skipped because the API rejects writes to them.  Pages are followed until one
-comes back not full, so every playlist is offered (not just the first page)."
+  "Accumulate USER-ID's modifiable (owned or collaborative) playlists across all
+pages into ACC as (NAME ID) entries, starting at PAGE, then call CALLBACK."
   (splotch-api-user-playlists
    user-id page
    (lambda (json)
@@ -316,10 +312,8 @@ comes back not full, so every playlist is offered (not just the first page)."
          (funcall callback acc))))))
 
 (defun splotch-track-select-playlist (callback)
-  "Call CALLBACK with the id of a playlist the user selects.
-Only playlists the user can modify (owned or collaborative) are offered, since
-the API rejects adding to a playlist you merely follow.  All pages of your
-playlists are gathered before prompting."
+  "Prompt for one of the user's modifiable playlists, then call CALLBACK with its id.
+Only owned or collaborative playlists are offered (you can't add to a followed one)."
   (interactive)
   (splotch-api-current-user
    (lambda (user)
@@ -330,9 +324,8 @@ playlists are gathered before prompting."
             (message "No modifiable playlists found (owned or collaborative)")
           (let* ((selected (completing-read "Select Playlist: " choices nil t))
                  (id (cadr (assoc selected choices))))
-            ;; Guard a selection that doesn't resolve to an id (e.g. raw input
-            ;; forced past require-match) — a nil id would otherwise crash in
-            ;; `url-hexify-string' downstream with "stringp, nil".
+            ;; A selection that doesn't resolve to an id (raw input past
+            ;; require-match) would crash downstream in `url-hexify-string'.
             (if (and (stringp id) (not (string-empty-p id)))
                 (funcall callback id)
               (message "No playlist selected")))))))))
@@ -407,7 +400,7 @@ playlists are gathered before prompting."
                    (gethash "name" track))))))))
 
 (defun splotch-remove-playing-track-from-library ()
-  "Save the currently playing track to Liked Songs."
+  "Remove the currently playing track from Liked Songs."
   (interactive)
   (splotch-api-get-player-status
    (lambda (status)

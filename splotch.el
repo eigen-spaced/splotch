@@ -97,10 +97,7 @@
 ;;;###autoload
 (defun splotch-open-playlist (&optional refresh)
   "Pick one of your playlists by name with completion and open its tracks.
-Unlike `splotch-my-playlists' (a paginated list buffer), this gathers all of
-your playlists and prompts with completion, so you can type a name and RET to
-open it.  The list is fetched once and cached; a prefix argument
-\\[universal-argument] (REFRESH) re-fetches it."
+The list is gathered once and cached; a prefix argument (REFRESH) re-fetches it."
   (interactive "P")
   (splotch-playlist-open-prompt refresh))
 
@@ -131,8 +128,7 @@ Prompt for the NAME and whether it should be made PUBLIC."
         (lambda (new-playlist)
           (if new-playlist
               (progn
-                ;; The cached picker list is now stale; drop it so the new
-                ;; playlist shows up on the next `splotch-open-playlist'.
+                ;; Drop the stale picker cache so the new playlist shows up.
                 (splotch-playlist-invalidate-cache)
                 (message "Playlist '%s' created" (splotch-api-get-item-name new-playlist)))
             (message "Error creating the playlist"))))))))

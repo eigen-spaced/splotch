@@ -20,12 +20,9 @@
   :type 'string)
 
 (defcustom splotch-apple-return-focus-after-play t
-  "When non-nil, restore window focus after starting a track.
-Spotify's AppleScript `play track' command raises the Spotify app to the
-foreground (unlike playpause/next/previous, which don't), so starting a track
-from a Splotch buffer yanks you out of Emacs.  With this enabled, Splotch records
-whichever app was frontmost, issues the play, then re-activates that app — so
-playback stays distraction-free.  macOS only."
+  "When non-nil, restore window focus after starting a track (macOS only).
+Spotify's AppleScript `play track' raises Spotify to the foreground; this records
+the frontmost app and re-activates it after playing, so you stay in Emacs."
   :group 'splotch
   :type 'boolean)
 
@@ -126,10 +123,9 @@ Return the resulting status string."
   (splotch-apple-command "set shuffling to not shuffling"))
 
 (defun splotch-apple-player-play-track (track-id context-id)
-  "Dispatch message about playing TRACK-ID in CONTEXT-ID.
-When `splotch-apple-return-focus-after-play' is non-nil, capture the frontmost
-app, play, and re-activate it so Spotify doesn't steal focus.  Done in a single
-asynchronous osascript so Emacs never blocks and the ordering is deterministic."
+  "Dispatch playing TRACK-ID in CONTEXT-ID.
+With `splotch-apple-return-focus-after-play' non-nil, re-activate the frontmost
+app after playing (one async osascript) so Spotify doesn't steal focus."
   (if splotch-apple-return-focus-after-play
       (let ((script
              (format (concat
