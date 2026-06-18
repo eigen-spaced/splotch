@@ -95,6 +95,16 @@
      (splotch-user-playlists (splotch-api-get-item-id user)))))
 
 ;;;###autoload
+(defun splotch-open-playlist (&optional refresh)
+  "Pick one of your playlists by name with completion and open its tracks.
+Unlike `splotch-my-playlists' (a paginated list buffer), this gathers all of
+your playlists and prompts with completion, so you can type a name and RET to
+open it.  The list is fetched once and cached; a prefix argument
+\\[universal-argument] (REFRESH) re-fetches it."
+  (interactive "P")
+  (splotch-playlist-open-prompt refresh))
+
+;;;###autoload
 (defun splotch-user-playlists (user-id)
   "Display the public playlists of the given user with USER-ID."
   (interactive "sSpotify User ID: ")
@@ -120,7 +130,11 @@ Prompt for the NAME and whether it should be made PUBLIC."
         public
         (lambda (new-playlist)
           (if new-playlist
-              (message "Playlist '%s' created" (splotch-api-get-item-name new-playlist))
+              (progn
+                ;; The cached picker list is now stale; drop it so the new
+                ;; playlist shows up on the next `splotch-open-playlist'.
+                (splotch-playlist-invalidate-cache)
+                (message "Playlist '%s' created" (splotch-api-get-item-name new-playlist)))
             (message "Error creating the playlist"))))))))
 
 (defvar splotch-command-map

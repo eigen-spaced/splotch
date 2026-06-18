@@ -82,6 +82,12 @@ Web API reference:
   Popularity column with the date each track was added to the playlist
   (`added_at`, formatted `YYYY-MM-DD`). Shown only in playlist views — track
   search and album views, which have no such date, simply drop the column.
+- **`splotch-open-playlist`**: pick one of your playlists by name with completion
+  and open its tracks (type a name, RET), instead of paging through the
+  `splotch-my-playlists` list buffer with `l`. All pages of your playlists are
+  gathered once and **cached** (a `\\[universal-argument]` prefix re-fetches;
+  creating a playlist invalidates the cache), so repeat opens don't re-request
+  every page.
 
 ### Changed
 
