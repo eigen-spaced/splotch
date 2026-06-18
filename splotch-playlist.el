@@ -110,16 +110,72 @@
              (message "Playlist view updated"))
          (message "No more playlists"))))))
 
-(defun splotch-playlist-tracks ()
-  "Displays the tracks that belongs to the playlist under the cursor."
+(defun splotch-playlist-tracks (&optional playlist)
+  "Display the tracks that belong to PLAYLIST.
+PLAYLIST defaults to the playlist under the cursor (in a playlist list buffer)."
   (interactive)
-  (let* ((selected-playlist (tabulated-list-get-id))
+  (let* ((selected-playlist (or playlist (tabulated-list-get-id)))
          (name (splotch-api-get-item-name selected-playlist))
          (buffer (get-buffer-create (format "*Playlist Tracks: %s*" name))))
     (with-current-buffer buffer
       (splotch-track-search-mode)
       (setq-local splotch-selected-playlist selected-playlist)
       (splotch-track-playlist-tracks-update 1))))
+
+(defvar splotch-playlist--all-cache nil
+  "Cached alist of (NAME . PLAYLIST) for the current user's playlists.
+Gathered across all pages on first use of `splotch-open-playlist' and reused
+until Emacs restarts, a playlist is created, or a `\\[universal-argument]'
+refresh — so the picker does not re-fetch every page each time it is opened.")
+
+(defun splotch-playlist-invalidate-cache ()
+  "Drop the cached playlist list used by `splotch-open-playlist'."
+  (setq splotch-playlist--all-cache nil))
+
+(defun splotch-playlist--collect-all (user-id page acc callback)
+  "Accumulate every page of USER-ID's playlists into ACC, then call CALLBACK.
+ACC is an alist of (NAME . PLAYLIST).  Pages are followed until one comes back
+not full, so all of the user's playlists are gathered — owned, collaborative and
+followed alike, since any can be opened for viewing."
+  (splotch-api-user-playlists
+   user-id page
+   (lambda (json)
+     (let* ((items (splotch-api-get-items json))
+            (acc (append acc
+                         (delq nil
+                               (mapcar
+                                (lambda (p)
+                                  (when (hash-table-p p)
+                                    (cons (splotch-api-get-item-name p) p)))
+                                items)))))
+       (if (and items (= (length items) splotch-api-search-limit))
+           (splotch-playlist--collect-all user-id (1+ page) acc callback)
+         (funcall callback acc))))))
+
+(defun splotch-playlist--open-from-choices (choices)
+  "Prompt over CHOICES (an alist of (NAME . PLAYLIST)) and open the selection."
+  (if (null choices)
+      (message "No playlists found")
+    (let* ((name (completing-read "Open playlist: " choices nil t))
+           (playlist (cdr (assoc name choices))))
+      (if (hash-table-p playlist)
+          (splotch-playlist-tracks playlist)
+        (message "No playlist selected")))))
+
+(defun splotch-playlist-open-prompt (refresh)
+  "Pick one of your playlists by name and open its tracks.
+The gathered list is cached across calls; non-nil REFRESH re-fetches it."
+  (when refresh
+    (splotch-playlist-invalidate-cache))
+  (if splotch-playlist--all-cache
+      (splotch-playlist--open-from-choices splotch-playlist--all-cache)
+    (splotch-api-current-user
+     (lambda (user)
+       (splotch-playlist--collect-all
+        (splotch-api-get-item-id user) 1 nil
+        (lambda (choices)
+          (setq splotch-playlist--all-cache choices)
+          (splotch-playlist--open-from-choices choices)))))))
 
 (defun splotch-playlist-set-list-format ()
   "Configures the column data for the typical playlist view."
