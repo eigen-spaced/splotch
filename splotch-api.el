@@ -211,14 +211,18 @@ Starts a local HTTP server to capture the authorization code from the callback."
     (while (not splotch-api-oauth2-auth-code)
       (sleep-for 0.5))
 
-    ;; Exchange the authorization code for an access token using built-in oauth2 function
+    ;; Exchange the authorization code for an access token using built-in oauth2 function.
+    ;; Pass the "splotch" host-name so the token's request-cache is keyed the same way
+    ;; `splotch-api-oauth2-token' later refreshes it; otherwise the first refresh after
+    ;; auth always misses the cache and makes a needless network round-trip.
     (let ((token (oauth2-request-access
                   auth-url
                   token-url
                   client-id
                   client-secret
                   splotch-api-oauth2-auth-code
-                  redirect-uri)))
+                  redirect-uri
+                  "splotch")))
 
       ;; Stop the HTTP server
       (splotch-api-oauth2-stop-server)
@@ -263,36 +267,60 @@ Starts a local HTTP server to capture the authorization code from the callback."
            :token-url splotch-api-oauth2-token-url
            :access-response token-data))))))
 
+(defun splotch-api-oauth2-run-auth ()
+  "Run the interactive Spotify sign-in flow and return a fresh OAuth2 token.
+Used both for the first authorization and to recover after the refresh token
+has expired or been revoked (Spotify `invalid_grant')."
+  (let ((inhibit-message nil))
+    (message "Splotch: Spotify sign-in required — a browser will open to authorize."))
+  (splotch-api-oauth2-auth
+   splotch-api-oauth2-auth-url
+   splotch-api-oauth2-token-url
+   splotch-oauth2-client-id
+   splotch-oauth2-client-secret
+   splotch-api-oauth2-scopes
+   (format "%s://%s:%s/%s"
+           splotch-oauth2-callback-scheme
+           splotch-oauth2-callback-host
+           splotch-oauth2-callback-port
+           splotch-oauth2-callback-endpoint)))
+
 (defun splotch-api-oauth2-token ()
-  "Retrieve the Oauth2 access token used to interact with the Spotify API.
-Use the first available token in order of: memory, disk, retrieve from API via
-OAuth2 protocol.  Refresh if expired.  Spin and wait if already in the process
-of fetching via another call to this method."
+  "Retrieve the OAuth2 access token used to interact with the Spotify API.
+Order of preference: in-memory token, on-disk token, or a fresh sign-in.
+
+`oauth2-refresh-access' reuses the cached access token until it expires, then
+mints a new one from the refresh token.  When the refresh token itself has
+expired or been revoked, Spotify returns `invalid_grant'; the oauth2 library
+then deletes the stored token and returns nil, and we send the user back through
+the sign-in flow.  (Spotify refresh tokens expire after six months as of
+2026-07-20.)  A transient refresh failure also returns nil but leaves the stored
+token on disk intact, so we reload and keep using it rather than forcing a
+needless re-login.  Spin and wait if another call is already authenticating."
   (let ((inhibit-message t))
-    ;; If auth is already in progress, wait for it to complete
+    ;; If auth is already in progress, wait for it to complete.
     (while splotch-api-oauth2-auth-in-progress
       (sleep-for 0.5))
 
-    ;; Get token from memory, disk, or start new auth flow
+    ;; Prefer an in-memory or on-disk token; otherwise sign in.
     (unless splotch-api-oauth2-token
       (setq splotch-api-oauth2-token
             (or (splotch-api-oauth2-load-token)
-                (splotch-api-oauth2-auth
-                 splotch-api-oauth2-auth-url
-                 splotch-api-oauth2-token-url
-                 splotch-oauth2-client-id
-                 splotch-oauth2-client-secret
-                 splotch-api-oauth2-scopes
-                 (format "%s://%s:%s/%s"
-                         splotch-oauth2-callback-scheme
-                         splotch-oauth2-callback-host
-                         splotch-oauth2-callback-port
-                         splotch-oauth2-callback-endpoint)))))
+                (splotch-api-oauth2-run-auth))))
 
-    ;; Refresh token if expired
+    ;; Refresh (reuses the cached access token until it expires).  On
+    ;; invalid_grant the library deletes the stored token and returns nil.
     (when splotch-api-oauth2-token
       (setq splotch-api-oauth2-token
             (oauth2-refresh-access splotch-api-oauth2-token "splotch")))
+
+    ;; Refresh nulled the token: if the on-disk token is gone, the refresh token
+    ;; was rejected (invalid_grant) and we must re-authenticate; if it survived,
+    ;; the failure was transient, so reuse it.
+    (unless splotch-api-oauth2-token
+      (setq splotch-api-oauth2-token
+            (or (splotch-api-oauth2-load-token)
+                (splotch-api-oauth2-run-auth))))
 
     splotch-api-oauth2-token))
 

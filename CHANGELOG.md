@@ -100,6 +100,13 @@ Web API reference:
 - The playlist picker no longer errors with `stringp, nil` when the selection
   doesn't resolve to a playlist id (e.g. raw input forced past `require-match`);
   it reports "No playlist selected" instead.
+- **OAuth re-authorization** (`splotch-api-oauth2-token`): when the stored refresh
+  token is rejected (Spotify `invalid_grant` — refresh tokens expire after six
+  months as of **2026-07-20**), Splotch now discards the dead token and re-runs the
+  sign-in flow instead of crashing on a nil token. Transient refresh failures reuse
+  the on-disk token rather than forcing a needless re-login, and the initial auth
+  now seeds the token's request-cache (host `"splotch"`) so routine API calls reuse
+  the cached access token until it actually expires.
 
 [feb2026]: https://developer.spotify.com/documentation/web-api/references/changes/february-2026
 [app-list]: https://developer.spotify.com/dashboard
